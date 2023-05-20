@@ -1,10 +1,14 @@
 import axios from "axios";
 import "bootstrap";
 import "bootstrap/dist/css/bootstrap.min.css";
+import prettyBytes from "pretty-bytes";
 
 const form = document.querySelector("[data-form]");
 const queryParamsContainer = document.querySelector("[data-query-params]");
 const requestHeaderContainer = document.querySelector("[data-request-headers]");
+const responseHeadersContainer = document.querySelector(
+  "[data-response-headers]"
+);
 
 const keyValueTemplate = document.querySelector("[data-key-value-template]");
 
@@ -22,6 +26,23 @@ document
 queryParamsContainer.append(createKeyValuePair());
 requestHeaderContainer.append(createKeyValuePair());
 
+axios.interceptors.request.use((request) => {
+  request.customData = request.customData || {};
+  request.customData.startTime = new Date().getTime();
+  return request;
+});
+
+function updateEndTime(response) {
+  response.customData = response.customData || {};
+  response.customData.time =
+    new Date().getTime() - response.config.customData.startTime;
+  return response;
+}
+
+axios.interceptors.response.use(updateEndTime, (e) => {
+  return Promise.reject(updateEndTime(e.response));
+});
+
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   axios({
@@ -29,9 +50,17 @@ form.addEventListener("submit", (e) => {
     method: document.querySelector("[data-method]").value,
     params: keyValuePairsToObjects(queryParamsContainer),
     headers: keyValuePairsToObjects(requestHeaderContainer),
-  }).then((response) => {
-    console.log(response);
-  });
+  })
+    .catch((e) => e)
+    .then((response) => {
+      document
+        .querySelector("[data-response-section]")
+        .classList.remove("d-none");
+      updateResponseDetails(response);
+      // updateResponseEditor(response.data);
+      updateResponseHeaders(response.headers);
+      console.log(response);
+    });
 });
 
 function createKeyValuePair() {
@@ -51,4 +80,25 @@ function keyValuePairsToObjects(container) {
     if (key === "") return data;
     return { ...data, [key]: value };
   }, {});
+}
+
+function updateResponseHeaders(headers) {
+  responseHeadersContainer.innerHTML = "";
+  Object.entries(headers).forEach(([key, value]) => {
+    const keyElement = document.createElement("div");
+    keyElement.textContent = key;
+    responseHeadersContainer.append(keyElement);
+    const valueElement = document.createElement("div");
+    valueElement.textContent = value;
+    responseHeadersContainer.append(valueElement);
+  });
+}
+
+function updateResponseDetails(response) {
+  document.querySelector("[data-status]").textContent = response.status;
+  document.querySelector("[data-time]").textContent = response.customData.time;
+  document.querySelector("[data-size]").textContent = prettyBytes(
+    JSON.stringify(response.data).length +
+      JSON.stringify(response.headers).length
+  );
 }
